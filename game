@@ -1,0 +1,586 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ocean Dash</title>
+  <style>
+    :root {
+      --bg1: #020817;
+      --bg2: #0b2440;
+      --panel: rgba(8, 25, 46, 0.9);
+      --panel-border: rgba(111, 196, 255, 0.32);
+      --text: #ecf4ff;
+      --muted: #b7c9e5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, #153e66 0%, #051222 34%, #010814 82%),
+        linear-gradient(180deg, var(--bg2), var(--bg1));
+      min-height: 100vh;
+    }
+    .page { max-width: 1640px; margin: 0 auto; padding: 24px 28px 32px; }
+    .hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    h1 { margin: 0 0 6px; font-size: clamp(3rem, 5vw, 5rem); line-height: 0.95; letter-spacing: -0.05em; font-weight: 800; }
+    .subtitle { margin: 0; color: var(--muted); font-size: 1.1rem; }
+    .hero-actions { display: flex; gap: 10px; align-items: center; }
+    .ui-btn { border: 1px solid rgba(111, 196, 255, 0.38); background: rgba(8, 25, 46, 0.92); color: var(--text); border-radius: 14px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
+    .layout { display: grid; grid-template-columns: minmax(780px, 1fr) 340px; gap: 22px; align-items: start; }
+    canvas { width: 100%; max-width: 1280px; aspect-ratio: 16 / 9; display: block; border-radius: 28px; border: 3px solid rgba(104, 205, 255, 0.82); box-shadow: 0 30px 70px rgba(0, 0, 0, 0.35); background: linear-gradient(180deg, #4f89aa 0%, #215d84 100%); }
+    .panel-stack { display: grid; gap: 18px; }
+    .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 24px; padding: 20px 22px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+    .panel h2 { margin: 0 0 10px; font-size: 1.1rem; }
+    .panel p { margin: 0; color: var(--muted); font-size: 0.98rem; line-height: 1.55; }
+    .footer-note { margin-top: 14px; color: #90a8c7; font-size: 0.92rem; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <h1>Ocean Dash</h1>
+        <p class="subtitle">A browser version of the shark attack game, rebuilt for a laptop.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="muteBtn" class="ui-btn" type="button">Sound: On</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="game-shell">
+        <canvas id="game" width="1280" height="720"></canvas>
+        <div class="footer-note">Run on the floor, jump over sharks, land, then keep running. Press spacebar to jump. Try to collect as many coins as possible.</div>
+      </section>
+
+      <aside class="panel-stack">
+        <section class="panel">
+          <h2>Controls</h2>
+          <p><strong>Spacebar</strong>: jump</p>
+          <p><strong>R</strong>: restart after game over</p>
+          <p><strong>M</strong>: mute or unmute</p>
+        </section>
+        <section class="panel">
+          <h2>Goal</h2>
+          <p>Avoid the sharks, follow the coins, and survive as the pace gradually increases.</p>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script>
+    const GAME = {
+      width: 1280,
+      height: 720,
+      groundHeight: 118,
+      baseSpeed: 270,
+      maxSpeed: 500,
+      speedStep: 30,
+      stageIntervalMs: 10000,
+      rampBufferMs: 900,
+      sharkCount: 4,
+      sharkPixelSize: 4,
+      coinRadius: 11,
+      coinMinSpacing: 40,
+      coinSharkClearance: 34,
+      submarinePixelSize: 4,
+      gravityBase: 2100,
+      jumpVelocityBase: -830,
+      maxDeltaMs: 34
+    };
+
+    const SUBMARINE_SPRITE = [
+      [0,0,0,0,0,0,0,1,1,0,0,0],[0,0,0,0,0,0,0,1,0,0,0,0],[0,0,0,0,0,0,0,1,0,0,0,0],
+      [0,0,0,0,0,1,1,0,1,1,0,0],[0,0,0,0,1,0,0,0,0,0,1,0],[1,1,0,1,0,0,0,0,0,0,0,1],
+      [0,1,1,1,0,0,1,0,1,0,0,1],[1,1,0,1,0,0,0,0,0,0,0,1],[0,0,0,0,1,0,0,0,0,0,1,0],
+      [0,0,0,0,0,1,1,0,1,1,0,0],[0,0,0,0,0,0,0,1,0,0,0,0]
+    ];
+
+    const SHARK_SPRITE = [
+      [0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1,1],[0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,1,0,0,1,0,1],
+      [0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,1,0,0,1],[0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[0,0,0,1,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [0,0,1,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1],[0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,1],
+      [0,0,1,0,0,0,0,0,0,0,0,1,0,1,1,0,0,0,0,1,1],[0,0,0,1,0,0,0,0,0,0,1,0,0,0,1,1,0,0,0,0,0],
+      [0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,1,1,0,0,0]
+    ];
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+    function rectOverlap(a, b) { return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y; }
+    function circleRectOverlap(cx, cy, r, rect) {
+      const nx = clamp(cx, rect.x, rect.x + rect.width);
+      const ny = clamp(cy, rect.y, rect.y + rect.height);
+      const dx = cx - nx, dy = cy - ny;
+      return dx * dx + dy * dy <= r * r;
+    }
+    function roundRect(ctx, x, y, w, h, radius, fill, stroke) {
+      const r = Math.min(radius, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+    function drawPixelSprite(ctx, sprite, x, y, size, color) {
+      ctx.fillStyle = color;
+      for (let r = 0; r < sprite.length; r++) {
+        for (let c = 0; c < sprite[r].length; c++) {
+          if (sprite[r][c]) ctx.fillRect(x + c * size, y + r * size, size, size);
+        }
+      }
+    }
+
+    class AudioManager {
+      constructor() { this.enabled = true; this.ctx = null; }
+      setEnabled(v) { this.enabled = v; }
+      async unlock() {
+        if (!this.enabled) return;
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          this.ctx = new AudioCtx();
+        }
+        if (this.ctx.state === "suspended") await this.ctx.resume();
+      }
+      beep({ frequency = 440, duration = 0.08, type = "sine", gain = 0.03, slideTo = null }) {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const amp = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(frequency, now);
+        if (slideTo !== null) osc.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), now + duration);
+        amp.gain.setValueAtTime(0.0001, now);
+        amp.gain.exponentialRampToValueAtTime(gain, now + 0.01);
+        amp.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        osc.connect(amp); amp.connect(this.ctx.destination);
+        osc.start(now); osc.stop(now + duration + 0.01);
+      }
+      jump() { this.beep({ frequency: 520, duration: 0.09, type: "triangle", gain: 0.028, slideTo: 720 }); }
+      coin() { this.beep({ frequency: 880, duration: 0.08, type: "square", gain: 0.018, slideTo: 1180 }); }
+      gameOver() { this.beep({ frequency: 280, duration: 0.32, type: "triangle", gain: 0.03, slideTo: 110 }); }
+    }
+
+    class Submarine {
+      constructor(game) {
+        this.game = game;
+        this.pixelSize = GAME.submarinePixelSize;
+        this.width = SUBMARINE_SPRITE[0].length * this.pixelSize;
+        this.height = SUBMARINE_SPRITE.length * this.pixelSize;
+        this.x = 150;
+        this.floorY = this.game.groundY - this.height + 8;
+        this.gravity = GAME.gravityBase;
+        this.jumpVelocity = GAME.jumpVelocityBase;
+        this.reset();
+      }
+      reset() { this.y = this.floorY; this.velocityY = 0; this.onGround = true; }
+      syncToSpeed(speed) {
+        const t = clamp((speed - GAME.baseSpeed) / (GAME.maxSpeed - GAME.baseSpeed), 0, 1);
+        this.gravity = GAME.gravityBase + 160 * t;
+        this.jumpVelocity = GAME.jumpVelocityBase - 24 * t;
+      }
+      jump() {
+        if (!this.game.gameOver && this.onGround) {
+          this.velocityY = this.jumpVelocity;
+          this.onGround = false;
+          this.game.audio.jump();
+        }
+      }
+      update(dt) {
+        this.velocityY += this.gravity * dt;
+        this.y += this.velocityY * dt;
+        if (this.y >= this.floorY) {
+          this.y = this.floorY;
+          this.velocityY = 0;
+          this.onGround = true;
+        }
+      }
+      draw(ctx) {
+        drawPixelSprite(ctx, SUBMARINE_SPRITE, this.x, this.y, this.pixelSize, "#1f3d52");
+        ctx.fillStyle = "#e8f5ff";
+        ctx.fillRect(this.x + 8, this.y + 13, 6, 6);
+        ctx.fillRect(this.x + 31, this.y + 18, 6, 6);
+      }
+      get hitbox() {
+        return { x: this.x + 4, y: this.y + 8, width: this.width - 8, height: this.height - 10 };
+      }
+    }
+
+    class Shark {
+      constructor(game, x, gapAfter) {
+        this.game = game;
+        this.pixelSize = GAME.sharkPixelSize;
+        this.width = SHARK_SPRITE[0].length * this.pixelSize;
+        this.height = SHARK_SPRITE.length * this.pixelSize;
+        this.x = x;
+        this.y = this.game.groundY - this.height + 10;
+        this.gapAfter = gapAfter;
+      }
+      update(dt, speed) { this.x -= speed * dt; }
+      draw(ctx) {
+        drawPixelSprite(ctx, SHARK_SPRITE, this.x, this.y, this.pixelSize, "#21445f");
+        ctx.fillStyle = "#edf8ff";
+        ctx.fillRect(this.x + 72, this.y + 20, 5, 5);
+        ctx.fillStyle = "#06101b";
+        ctx.fillRect(this.x + 74, this.y + 22, 2, 2);
+      }
+      get hitbox() {
+        return { x: this.x + 8, y: this.y + 8, width: this.width - 16, height: this.height - 12 };
+      }
+    }
+
+    class Coin {
+      constructor(x, y) { this.x = x; this.y = y; this.radius = GAME.coinRadius; }
+      update(dt, speed) { this.x -= speed * dt; }
+      draw(ctx) {
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = "#b78600"; ctx.fill();
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius - 4, 0, Math.PI * 2); ctx.fillStyle = "#f4c542"; ctx.fill();
+        ctx.beginPath(); ctx.arc(this.x - 3, this.y - 3, this.radius - 8, 0, Math.PI * 2); ctx.fillStyle = "#ffe17a"; ctx.fill();
+      }
+    }
+
+    class Game {
+      constructor(ctx, audio) {
+        this.ctx = ctx;
+        this.audio = audio;
+        this.groundY = GAME.height - GAME.groundHeight;
+        this.submarine = new Submarine(this);
+        this.reset();
+      }
+
+      reset() {
+        this.sharks = [];
+        this.coins = [];
+        this.bubbles = [];
+        this.score = 0;
+        this.gameOver = false;
+        this.elapsedMs = 0;
+        this.nextRampAt = GAME.stageIntervalMs;
+        this.bufferUntil = 0;
+        this.inBuffer = false;
+        this.pendingRamp = false;
+        this.scrollSpeed = GAME.baseSpeed;
+        this.submarine.reset();
+        this.submarine.syncToSpeed(this.scrollSpeed);
+        this.seedBubbles();
+        this.seedQueue(GAME.width + 120);
+      }
+
+      seedBubbles() {
+        this.bubbles = [];
+        for (let i = 0; i < 18; i++) {
+          this.bubbles.push({ x: rand(0, GAME.width), y: rand(100, this.groundY - 50), r: rand(10, 28), speed: rand(15, 40), alpha: rand(0.05, 0.13) });
+        }
+      }
+
+      addCoinIfClear(x, y) {
+        const minDist = GAME.coinMinSpacing;
+        for (const coin of this.coins) {
+          const dx = coin.x - x;
+          const dy = coin.y - y;
+          if (dx * dx + dy * dy < minDist * minDist) return;
+        }
+
+        const clearance = GAME.coinSharkClearance;
+        for (const shark of this.sharks) {
+          const rect = { x: shark.x, y: shark.y, width: shark.width, height: shark.height };
+          const nx = Math.max(rect.x - clearance, Math.min(x, rect.x + rect.width + clearance));
+          const ny = Math.max(rect.y - clearance, Math.min(y, rect.y + rect.height + clearance));
+          const dx = x - nx;
+          const dy = y - ny;
+          if (dx * dx + dy * dy < (GAME.coinRadius + 2) * (GAME.coinRadius + 2)) return;
+        }
+
+        this.coins.push(new Coin(x, y));
+      }
+
+      computeGap() {
+        const sharkWidth = SHARK_SPRITE[0].length * GAME.sharkPixelSize;
+        const minGap = sharkWidth + this.scrollSpeed * 0.33;
+        const maxGap = sharkWidth + this.scrollSpeed * 0.62;
+        return rand(minGap, maxGap);
+      }
+
+      seedQueue(startX) {
+        let x = startX;
+        while (this.sharks.length < GAME.sharkCount) {
+          const gap = this.computeGap();
+          const shark = new Shark(this, x, gap);
+          this.sharks.push(shark);
+          this.addGuideCoins(shark);
+          x += shark.width + gap;
+        }
+      }
+
+      addGuideCoins(shark) {
+        const runupStart = shark.x - 96;
+        const runupEnd = shark.x - 40;
+        for (let i = 0; i < 3; i++) {
+          const t = i / 2;
+          this.addCoinIfClear(runupStart + (runupEnd - runupStart) * t, this.groundY - 28);
+        }
+
+        const peakY = shark.y - 30;
+        this.addCoinIfClear(shark.x + shark.width * 0.36, peakY);
+        this.addCoinIfClear(shark.x + shark.width * 0.64, peakY);
+
+        const arcPoints = [
+          [shark.x - 8, this.groundY - 62],
+          [shark.x + shark.width * 0.50, this.groundY - 108],
+          [shark.x + shark.width + 8, this.groundY - 62]
+        ];
+        for (const [x, y] of arcPoints) {
+          this.addCoinIfClear(x, y);
+        }
+
+        const landingStart = shark.x + shark.width + 28;
+        const landingEnd = shark.x + shark.width + Math.min(76, shark.gapAfter * 0.38);
+        this.addCoinIfClear(landingStart, this.groundY - 28);
+        this.addCoinIfClear(landingEnd, this.groundY - 28);
+
+        const gapStart = shark.x + shark.width + 94;
+        const gapEnd = shark.x + shark.width + shark.gapAfter - 46;
+        const gapWidth = Math.max(0, gapEnd - gapStart);
+        const floorCount = gapWidth >= 88 ? Math.floor(gapWidth / 88) : 0;
+        for (let i = 0; i < floorCount; i++) {
+          const t = floorCount === 1 ? 0 : i / (floorCount - 1);
+          this.addCoinIfClear(gapStart + gapWidth * t, this.groundY - 28);
+        }
+      }
+
+      spawnBufferCoins() {
+        this.coins = [];
+        const count = 12;
+        const spacing = 82;
+        const startX = GAME.width - 30;
+        for (let i = 0; i < count; i++) this.addCoinIfClear(startX + i * spacing, this.groundY - 28);
+      }
+
+      startRampBuffer() {
+        this.pendingRamp = false;
+        this.inBuffer = true;
+        this.bufferUntil = this.elapsedMs + GAME.rampBufferMs;
+        this.sharks = [];
+        this.spawnBufferCoins();
+      }
+
+      finishRampBuffer() {
+        this.inBuffer = false;
+        this.scrollSpeed = clamp(this.scrollSpeed + GAME.speedStep, GAME.baseSpeed, GAME.maxSpeed);
+        this.submarine.syncToSpeed(this.scrollSpeed);
+        this.nextRampAt += GAME.stageIntervalMs;
+        this.sharks = [];
+        this.coins = this.coins.filter(c => c.x + c.radius > -20);
+        this.seedQueue(GAME.width + 140);
+      }
+
+      update(dt, dtMs) {
+        if (this.gameOver) return;
+        this.elapsedMs += dtMs;
+        if (!this.inBuffer && this.elapsedMs >= this.nextRampAt) this.pendingRamp = true;
+        if (this.pendingRamp && this.sharks.length === 0) this.startRampBuffer();
+        if (this.inBuffer && this.elapsedMs >= this.bufferUntil) this.finishRampBuffer();
+
+        const sharkSpeed = this.inBuffer ? 0 : this.scrollSpeed;
+        const coinSpeed = this.scrollSpeed;
+
+        for (const bubble of this.bubbles) {
+          bubble.x -= bubble.speed * dt + this.scrollSpeed * 0.08 * dt;
+          if (bubble.x < -40) {
+            bubble.x = GAME.width + rand(20, 180);
+            bubble.y = rand(100, this.groundY - 50);
+          }
+        }
+
+        this.submarine.update(dt);
+        for (const shark of this.sharks) shark.update(dt, sharkSpeed);
+        for (const coin of this.coins) coin.update(dt, coinSpeed);
+
+        while (this.sharks.length && this.sharks[0].x + this.sharks[0].width < -40) this.sharks.shift();
+
+        if (!this.inBuffer && !this.pendingRamp) {
+          while (this.sharks.length < GAME.sharkCount) {
+            const last = this.sharks[this.sharks.length - 1];
+            const nextX = last ? last.x + last.width + last.gapAfter : GAME.width + 120;
+            const shark = new Shark(this, nextX, this.computeGap());
+            this.sharks.push(shark);
+            this.addGuideCoins(shark);
+          }
+        }
+
+        this.coins = this.coins.filter((coin) => {
+          if (coin.x + coin.radius < -20) return false;
+          if (circleRectOverlap(coin.x, coin.y, coin.radius, this.submarine.hitbox)) {
+            this.score += 1;
+            this.audio.coin();
+            return false;
+          }
+          return true;
+        });
+
+        for (const shark of this.sharks) {
+          if (rectOverlap(this.submarine.hitbox, shark.hitbox)) {
+            this.gameOver = true;
+            this.audio.gameOver();
+            break;
+          }
+        }
+      }
+
+      drawBackground() {
+        const ctx = this.ctx;
+        const sky = ctx.createLinearGradient(0, 0, 0, GAME.height);
+        sky.addColorStop(0, "#4f89aa");
+        sky.addColorStop(1, "#12537d");
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, GAME.width, GAME.height);
+
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = "#ffffff";
+        for (let i = 0; i < 7; i++) {
+          const x = ((i * 210) - (this.elapsedMs * 0.02) + GAME.width) % GAME.width;
+          ctx.beginPath();
+          ctx.ellipse(x, 112 + (i % 2) * 26, 54, 13, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.lineWidth = 4;
+        for (let row = 0; row < 6; row++) {
+          ctx.beginPath();
+          const y = 148 + row * 68;
+          for (let x = -40; x <= GAME.width + 40; x += 40) {
+            const waveY = y + Math.sin((x + this.elapsedMs * 0.04 + row * 24) * 0.015) * 6;
+            if (x === -40) ctx.moveTo(x, waveY); else ctx.lineTo(x, waveY);
+          }
+          ctx.stroke();
+        }
+
+        for (const bubble of this.bubbles) {
+          ctx.globalAlpha = bubble.alpha;
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(bubble.x, bubble.y, bubble.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.fillStyle = "#0d385d";
+        ctx.fillRect(0, this.groundY, GAME.width, GAME.height - this.groundY);
+
+        ctx.fillStyle = "#12385c";
+        for (let i = 0; i < 18; i++) {
+          const x = ((i * 96) - (this.elapsedMs * 0.07) + GAME.width) % GAME.width;
+          ctx.beginPath();
+          ctx.arc(x, this.groundY + 58, 22, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.strokeStyle = "rgba(255,255,255,0.26)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, this.groundY + 2);
+        ctx.lineTo(GAME.width, this.groundY + 2);
+        ctx.stroke();
+      }
+
+      drawHud() {
+        const ctx = this.ctx;
+        ctx.fillStyle = "rgba(4, 18, 32, 0.82)";
+        ctx.strokeStyle = "rgba(130, 211, 255, 0.2)";
+        ctx.lineWidth = 2;
+        roundRect(ctx, 24, 22, 290, 102, 24, true, true);
+        ctx.fillStyle = "#eef7ff";
+        ctx.font = "bold 36px Inter, Arial";
+        ctx.fillText(`Coins: ${this.score}`, 48, 78);
+      }
+
+      drawGameOver() {
+        if (!this.gameOver) return;
+        const ctx = this.ctx;
+        ctx.fillStyle = "rgba(0,0,0,0.34)";
+        ctx.fillRect(0, 0, GAME.width, GAME.height);
+        ctx.fillStyle = "rgba(4, 18, 32, 0.94)";
+        ctx.strokeStyle = "rgba(130, 211, 255, 0.25)";
+        roundRect(ctx, GAME.width / 2 - 290, GAME.height / 2 - 146, 580, 230, 28, true, true);
+        ctx.fillStyle = "#f5fbff";
+        ctx.font = "bold 68px Inter, Arial";
+        ctx.fillText("Game Over", GAME.width / 2 - 190, GAME.height / 2 - 18);
+        ctx.font = "600 36px Inter, Arial";
+        ctx.fillText(`Final Coins: ${this.score}`, GAME.width / 2 - 130, GAME.height / 2 + 50);
+        ctx.font = "500 28px Inter, Arial";
+        ctx.fillStyle = "#d3e6f8";
+        ctx.fillText("Press Space or R to restart", GAME.width / 2 - 170, GAME.height / 2 + 112);
+      }
+
+      draw() {
+        this.drawBackground();
+        for (const coin of this.coins) coin.draw(this.ctx);
+        for (const shark of this.sharks) shark.draw(this.ctx);
+        this.submarine.draw(this.ctx);
+        this.drawHud();
+        this.drawGameOver();
+      }
+    }
+
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const muteBtn = document.getElementById("muteBtn");
+    const audio = new AudioManager();
+    const game = new Game(ctx, audio);
+    let last = 0;
+
+    function updateMuteButton() {
+      muteBtn.textContent = `Sound: ${audio.enabled ? "On" : "Off"}`;
+    }
+
+    window.addEventListener("keydown", async (event) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        await audio.unlock();
+        if (game.gameOver) game.reset();
+        else game.submarine.jump();
+      }
+      if (event.code === "KeyR" && game.gameOver) {
+        await audio.unlock();
+        game.reset();
+      }
+      if (event.code === "KeyM") {
+        audio.setEnabled(!audio.enabled);
+        updateMuteButton();
+      }
+    });
+
+    muteBtn.addEventListener("click", async () => {
+      audio.setEnabled(!audio.enabled);
+      updateMuteButton();
+      await audio.unlock();
+    });
+
+    function loop(timestamp) {
+      if (!last) last = timestamp;
+      const dtMs = Math.min(GAME.maxDeltaMs, timestamp - last);
+      const dt = dtMs / 1000;
+      last = timestamp;
+      game.update(dt, dtMs);
+      game.draw();
+      requestAnimationFrame(loop);
+    }
+
+    updateMuteButton();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
