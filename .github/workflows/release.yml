@@ -1,0 +1,21 @@
+name: Release
+
+# Attaches ocean_dash.html to each published GitHub release, so the README's
+# download link always hands over the newest version.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Attach the game to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ocean_dash.html --repo "$GITHUB_REPOSITORY" --clobber
