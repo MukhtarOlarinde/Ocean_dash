@@ -29,4 +29,4 @@ If you would rather have a file, **[download ocean_dash.html](../../releases/lat
 
 Everything is in `ocean_dash.html`: the markup, the styles and the game code. Edit the file and reload the page.
 
-To publish a new version, go to Releases, press "Draft a new release", type a new tag such as `v1.0.1` and press "Publish release". The workflow in `.github/workflows/release.yml` attaches the file by itself. `.github/workflows/pages.yml` publishes the browser version on every change to `main`, once Pages is switched on (Settings, Pages, Source: GitHub Actions).
+To publish a new version, go to Releases, press "Draft a new release", type a new tag such as `v1.0.1` and press "Publish release". The workflow in `.github/workflows/release.yml` attaches the file by itself. `.github/workflows/pages.yml` publishes the browser version on every change to `main`.
