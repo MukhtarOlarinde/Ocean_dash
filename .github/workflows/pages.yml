@@ -1,0 +1,46 @@
+name: Play online
+
+# Publishes Ocean Dash at https://mukhtarolarinde.github.io/Ocean_dash/ so people can
+# use it in a browser with nothing to download, and install it from there as an app.
+#
+# Two things have to be true first, both in this repository's Settings:
+#   1. General, "Change repository visibility": Public. Pages on the free plan
+#      only serves public repositories. Until then this workflow skips itself.
+#   2. Pages, "Source": GitHub Actions.
+# After that it runs on every push to main, or from "Run workflow" on the Actions tab.
+
+on:
+  push:
+    branches: [main]
+  public:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the page
+        run: node scripts/build-site.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
