@@ -1,0 +1,49 @@
+name: Play online
+
+# Publishes Ocean Dash at https://mukhtarolarinde.github.io/Ocean_dash/ so people can use it
+# in a browser with nothing to download, and install it from there as an app.
+#
+# It builds the page and pushes it to the gh-pages branch. GitHub serves that
+# branch by itself for a public repository, so there is no setting to switch on.
+# While the repository is private this workflow skips itself, because the free
+# plan only serves public repositories.
+#
+# It runs on every push to main, when the repository is made public, and from
+# "Run workflow" on the Actions tab.
+
+on:
+  push:
+    branches: [main]
+  public:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the page
+        run: node scripts/build-site.js
+      - name: Publish to the gh-pages branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd _site
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
